@@ -31,9 +31,9 @@
     <ul>
         {% for file in files %}
             <li>
-                {{ file['filename'] }} ({{ file['filesize'] }} bytes)
-                — <a href="{{ url_for('download_file', file_id=file['id']) }}">Download</a>
-            </li>
+    {{ file['filename'] }} ({{ file['filesize'] }} bytes) — stored on {{ file['node_name'] }}
+    — <a href="{{ url_for('download_file', file_id=file['id']) }}">Download</a>
+</li>
         {% endfor %}
     </ul>
 </body>

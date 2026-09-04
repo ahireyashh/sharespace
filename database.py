@@ -47,20 +47,53 @@ def init_db():
     ''')
 
     conn.execute('''
+        CREATE TABLE IF NOT EXISTS storage_nodes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            node_name TEXT NOT NULL,
+            node_path TEXT NOT NULL,
+            capacity_mb INTEGER NOT NULL,
+            is_active INTEGER DEFAULT 1,
+            owner_user_id INTEGER,
+            is_user_node INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (owner_user_id) REFERENCES users (id)
+        )
+    ''')
+    conn.execute('''
         CREATE TABLE IF NOT EXISTS files (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             filename TEXT NOT NULL,
             stored_name TEXT NOT NULL,
             owner_id INTEGER NOT NULL,
             folder_id INTEGER,
+            node_id INTEGER,
             filesize INTEGER,
             filehash TEXT,
             is_trashed INTEGER DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (owner_id) REFERENCES users (id),
-            FOREIGN KEY (folder_id) REFERENCES folders (id)
+            FOREIGN KEY (folder_id) REFERENCES folders (id),
+            FOREIGN KEY (node_id) REFERENCES storage_nodes (id)
         )
     ''')
+    
 
     conn.commit()
+    conn.close()
+
+def seed_nodes():
+    conn = get_db_connection()
+    existing = conn.execute('SELECT COUNT(*) as c FROM storage_nodes').fetchone()['c']
+    if existing == 0:
+        nodes = [
+            ('Node 1', 'storage_nodes/node1', 500),
+            ('Node 2', 'storage_nodes/node2', 500),
+            ('Node 3', 'storage_nodes/node3', 500),
+        ]
+        for name, path, cap in nodes:
+            conn.execute(
+                'INSERT INTO storage_nodes (node_name, node_path, capacity_mb) VALUES (?, ?, ?)',
+                (name, path, cap)
+            )
+        conn.commit()
     conn.close()

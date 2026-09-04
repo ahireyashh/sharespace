@@ -1,11 +1,18 @@
 from flask import Flask, render_template, request, redirect, url_for, session, flash
 from werkzeug.security import generate_password_hash, check_password_hash
 from database import get_db_connection, init_db
+from storage_manager import select_best_node
+from database import get_db_connection, init_db, seed_nodes
+import os
+import hashlib
+import uuid
+from flask import send_from_directory
 
 app = Flask(__name__)
 app.secret_key = 'change-this-to-something-random-later'
 
 init_db()
+seed_nodes()
 from functools import wraps
 
 def login_required(f):
@@ -73,7 +80,9 @@ def login():
 def dashboard():
     conn = get_db_connection()
     files = conn.execute(
-        'SELECT * FROM files WHERE owner_id = ? AND is_trashed = 0',
+        '''SELECT files.*, storage_nodes.node_name FROM files
+           LEFT JOIN storage_nodes ON files.node_id = storage_nodes.id
+           WHERE files.owner_id = ? AND files.is_trashed = 0''',
         (session['user_id'],)
     ).fetchall()
     folders = conn.execute(
@@ -87,18 +96,7 @@ def logout():
     session.clear()
     return redirect(url_for('home'))
 
-if __name__ == '__main__':
-    app.run(debug=True)
 
-import os
-import hashlib
-import uuid
-from flask import send_from_directory
-
-UPLOAD_FOLDER = 'storage'
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-
-#file upload route
 @app.route('/create_folder', methods=['POST'])
 @login_required
 def create_folder():
@@ -114,3 +112,76 @@ def create_folder():
     conn.close()
     return redirect(url_for('dashboard'))
 
+@app.route('/upload', methods=['POST'])
+@login_required
+def upload_file():
+    if 'file' not in request.files:
+        flash('No file selected.')
+        return redirect(url_for('dashboard'))
+
+    file = request.files['file']
+    if file.filename == '':
+        flash('No file selected.')
+        return redirect(url_for('dashboard'))
+
+    folder_id = request.form.get('folder_id') or None
+
+    node = select_best_node()
+    if node is None:
+        flash('No storage node available.')
+        return redirect(url_for('dashboard'))
+
+    original_name = file.filename
+    unique_name = f"{uuid.uuid4().hex}_{original_name}"
+    filepath = os.path.join(node['node_path'], unique_name)
+
+    file.save(filepath)
+
+    filesize = os.path.getsize(filepath)
+    filehash = hashlib.sha256(open(filepath, 'rb').read()).hexdigest()
+
+    conn = get_db_connection()
+    conn.execute(
+        '''INSERT INTO files (filename, stored_name, owner_id, folder_id, node_id, filesize, filehash)
+           VALUES (?, ?, ?, ?, ?, ?, ?)''',
+        (original_name, unique_name, session['user_id'], folder_id, node['id'], filesize, filehash)
+    )
+    conn.commit()
+    conn.close()
+
+    flash(f'File uploaded successfully to {node["node_name"]}.')
+    return redirect(url_for('dashboard'))
+
+UPLOAD_FOLDER = 'storage'
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+
+
+
+@app.route('/download/<int:file_id>')
+@login_required
+def download_file(file_id):
+    conn = get_db_connection()
+    file = conn.execute(
+        'SELECT * FROM files WHERE id = ? AND owner_id = ?',
+        (file_id, session['user_id'])
+    ).fetchone()
+
+    if file is None:
+        conn.close()
+        flash('File not found or access denied.')
+        return redirect(url_for('dashboard'))
+
+    node = conn.execute(
+        'SELECT * FROM storage_nodes WHERE id = ?', (file['node_id'],)
+    ).fetchone()
+    conn.close()
+
+    return send_from_directory(
+        os.path.abspath(node['node_path']),
+        file['stored_name'],
+        as_attachment=True,
+        download_name=file['filename']
+    )
+    
+if __name__ == '__main__':
+    app.run(debug=True)

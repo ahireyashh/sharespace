@@ -6,3 +6,5 @@ instance/
 .env
 storage/*
 !storage/.gitkeep
+storage_nodes/*/*
+!storage_nodes/*/.gitkeep
