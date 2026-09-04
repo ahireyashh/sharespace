@@ -6,6 +6,15 @@ app = Flask(__name__)
 app.secret_key = 'change-this-to-something-random-later'
 
 init_db()
+from functools import wraps
+
+def login_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if 'user_id' not in session:
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated
 
 @app.route('/')
 def home():
@@ -60,11 +69,19 @@ def login():
     return render_template('login.html')
 
 @app.route('/dashboard')
+@login_required
 def dashboard():
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
-    return render_template('dashboard.html', username=session['username'])
-
+    conn = get_db_connection()
+    files = conn.execute(
+        'SELECT * FROM files WHERE owner_id = ? AND is_trashed = 0',
+        (session['user_id'],)
+    ).fetchall()
+    folders = conn.execute(
+        'SELECT * FROM folders WHERE owner_id = ?',
+        (session['user_id'],)
+    ).fetchall()
+    conn.close()
+    return render_template('dashboard.html', username=session['username'], files=files, folders=folders)
 @app.route('/logout')
 def logout():
     session.clear()
@@ -72,3 +89,28 @@ def logout():
 
 if __name__ == '__main__':
     app.run(debug=True)
+
+import os
+import hashlib
+import uuid
+from flask import send_from_directory
+
+UPLOAD_FOLDER = 'storage'
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+
+#file upload route
+@app.route('/create_folder', methods=['POST'])
+@login_required
+def create_folder():
+    folder_name = request.form['folder_name']
+    parent_id = request.form.get('parent_id') or None
+
+    conn = get_db_connection()
+    conn.execute(
+        'INSERT INTO folders (name, owner_id, parent_id) VALUES (?, ?, ?)',
+        (folder_name, session['user_id'], parent_id)
+    )
+    conn.commit()
+    conn.close()
+    return redirect(url_for('dashboard'))
+
