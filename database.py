@@ -66,6 +66,19 @@ def init_db():
             FOREIGN KEY (node_id) REFERENCES storage_nodes (id)
         )
     ''')
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS shares (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            file_id INTEGER NOT NULL,
+            owner_id INTEGER NOT NULL,
+            shared_with_id INTEGER NOT NULL,
+            permission TEXT DEFAULT 'view',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (file_id) REFERENCES files (id),
+            FOREIGN KEY (owner_id) REFERENCES users (id),
+            FOREIGN KEY (shared_with_id) REFERENCES users (id)
+        )
+    ''')
 
     conn.commit()
     conn.close()

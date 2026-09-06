@@ -178,13 +178,26 @@ def upload_file():
 def download_file(file_id):
     conn = get_db_connection()
     file = conn.execute(
-        'SELECT * FROM files WHERE id = ? AND owner_id = ?',
-        (file_id, session['user_id'])
+        'SELECT * FROM files WHERE id = ?', (file_id,)
     ).fetchone()
 
     if file is None:
         conn.close()
-        flash('File not found or access denied.')
+        flash('File not found.')
+        return redirect(url_for('dashboard'))
+
+    is_owner = file['owner_id'] == session['user_id']
+
+    share = conn.execute(
+        'SELECT * FROM shares WHERE file_id = ? AND shared_with_id = ?',
+        (file_id, session['user_id'])
+    ).fetchone()
+
+    has_download_permission = share and share['permission'] == 'download'
+
+    if not is_owner and not has_download_permission:
+        conn.close()
+        flash('You do not have permission to download this file.')
         return redirect(url_for('dashboard'))
 
     node = conn.execute(
@@ -198,6 +211,74 @@ def download_file(file_id):
         as_attachment=True,
         download_name=file['filename']
     )
+@app.route('/share', methods=['POST'])
+@login_required
+def share_file():
+    file_id = request.form['file_id']
+    target_username = request.form['username']
+    permission = request.form.get('permission', 'view')
+
+    conn = get_db_connection()
+
+    file = conn.execute(
+        'SELECT * FROM files WHERE id = ? AND owner_id = ?',
+        (file_id, session['user_id'])
+    ).fetchone()
+
+    if file is None:
+        conn.close()
+        flash('File not found or you are not the owner.')
+        return redirect(url_for('dashboard'))
+
+    target_user = conn.execute(
+        'SELECT * FROM users WHERE username = ?', (target_username,)
+    ).fetchone()
+
+    if target_user is None:
+        conn.close()
+        flash('User not found.')
+        return redirect(url_for('dashboard'))
+
+    if target_user['id'] == session['user_id']:
+        conn.close()
+        flash('You cannot share a file with yourself.')
+        return redirect(url_for('dashboard'))
+
+    existing = conn.execute(
+        'SELECT * FROM shares WHERE file_id = ? AND shared_with_id = ?',
+        (file_id, target_user['id'])
+    ).fetchone()
+
+    if existing:
+        conn.execute(
+            'UPDATE shares SET permission = ? WHERE id = ?',
+            (permission, existing['id'])
+        )
+    else:
+        conn.execute(
+            'INSERT INTO shares (file_id, owner_id, shared_with_id, permission) VALUES (?, ?, ?, ?)',
+            (file_id, session['user_id'], target_user['id'], permission)
+        )
+
+    conn.commit()
+    conn.close()
+    flash(f'File shared with {target_username}.')
+    return redirect(url_for('dashboard'))
+
+@app.route('/shared_with_me')
+@login_required
+def shared_with_me():
+    conn = get_db_connection()
+    shared_files = conn.execute(
+        '''SELECT files.*, shares.permission, users.username as owner_name
+           FROM shares
+           JOIN files ON shares.file_id = files.id
+           JOIN users ON shares.owner_id = users.id
+           WHERE shares.shared_with_id = ? AND files.is_trashed = 0''',
+        (session['user_id'],)
+    ).fetchall()
+    conn.close()
+    return render_template('shared_with_me.html', shared_files=shared_files)
 
 
 if __name__ == '__main__':

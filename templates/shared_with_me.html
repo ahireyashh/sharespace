@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html>
+<head><title>Shared With Me - ShareSpace</title></head>
+<body>
+    <h2>Files Shared With Me</h2>
+    <a href="{{ url_for('dashboard') }}">Back to Dashboard</a>
+    <ul>
+        {% for file in shared_files %}
+            <li>
+                {{ file['filename'] }} — shared by {{ file['owner_name'] }} ({{ file['permission'] }})
+                {% if file['permission'] == 'download' %}
+                    — <a href="{{ url_for('download_file', file_id=file['id']) }}">Download</a>
+                {% endif %}
+            </li>
+        {% endfor %}
+    </ul>
+</body>
+</html>
