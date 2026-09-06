@@ -11,7 +11,7 @@ from flask import (
 from werkzeug.security import generate_password_hash, check_password_hash
 
 from database import get_db_connection, init_db, seed_nodes
-from storage_manager import select_best_node
+from storage_manager import select_best_node, get_folder_size_mb
 
 app = Flask(__name__)
 app.secret_key = 'change-this-to-something-random-later'
@@ -27,6 +27,18 @@ def login_required(f):
     def decorated(*args, **kwargs):
         if 'user_id' not in session:
             return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated
+
+
+def admin_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if 'user_id' not in session:
+            return redirect(url_for('login'))
+        if session.get('role') != 'admin':
+            flash('Admin access required.')
+            return redirect(url_for('dashboard'))
         return f(*args, **kwargs)
     return decorated
 
@@ -114,6 +126,7 @@ def dashboard():
     return render_template(
         'dashboard.html',
         username=session['username'],
+        role=session.get('role'),
         files=files,
         folders=folders
     )
@@ -212,6 +225,78 @@ def download_file(file_id):
         download_name=file['filename']
     )
 
+
+@app.route('/share', methods=['POST'])
+@login_required
+def share_file():
+    file_id = request.form['file_id']
+    target_username = request.form['username']
+    permission = request.form.get('permission', 'view')
+
+    conn = get_db_connection()
+
+    file = conn.execute(
+        'SELECT * FROM files WHERE id = ? AND owner_id = ?',
+        (file_id, session['user_id'])
+    ).fetchone()
+
+    if file is None:
+        conn.close()
+        flash('File not found or you are not the owner.')
+        return redirect(url_for('dashboard'))
+
+    target_user = conn.execute(
+        'SELECT * FROM users WHERE username = ?', (target_username,)
+    ).fetchone()
+
+    if target_user is None:
+        conn.close()
+        flash('User not found.')
+        return redirect(url_for('dashboard'))
+
+    if target_user['id'] == session['user_id']:
+        conn.close()
+        flash('You cannot share a file with yourself.')
+        return redirect(url_for('dashboard'))
+
+    existing = conn.execute(
+        'SELECT * FROM shares WHERE file_id = ? AND shared_with_id = ?',
+        (file_id, target_user['id'])
+    ).fetchone()
+
+    if existing:
+        conn.execute(
+            'UPDATE shares SET permission = ? WHERE id = ?',
+            (permission, existing['id'])
+        )
+    else:
+        conn.execute(
+            'INSERT INTO shares (file_id, owner_id, shared_with_id, permission) VALUES (?, ?, ?, ?)',
+            (file_id, session['user_id'], target_user['id'], permission)
+        )
+
+    conn.commit()
+    conn.close()
+    flash(f'File shared with {target_username}.')
+    return redirect(url_for('dashboard'))
+
+
+@app.route('/shared_with_me')
+@login_required
+def shared_with_me():
+    conn = get_db_connection()
+    shared_files = conn.execute(
+        '''SELECT files.*, shares.permission, users.username as owner_name
+           FROM shares
+           JOIN files ON shares.file_id = files.id
+           JOIN users ON shares.owner_id = users.id
+           WHERE shares.shared_with_id = ? AND files.is_trashed = 0''',
+        (session['user_id'],)
+    ).fetchall()
+    conn.close()
+    return render_template('shared_with_me.html', shared_files=shared_files)
+
+
 @app.route('/delete/<int:file_id>', methods=['POST'])
 @login_required
 def delete_file(file_id):
@@ -298,74 +383,59 @@ def delete_permanent(file_id):
     return redirect(url_for('trash'))
 
 
-@app.route('/share', methods=['POST'])
-@login_required
-def share_file():
-    file_id = request.form['file_id']
-    target_username = request.form['username']
-    permission = request.form.get('permission', 'view')
+# ---------- Admin routes ----------
 
+@app.route('/admin')
+@admin_required
+def admin_dashboard():
     conn = get_db_connection()
 
-    file = conn.execute(
-        'SELECT * FROM files WHERE id = ? AND owner_id = ?',
-        (file_id, session['user_id'])
-    ).fetchone()
+    users = conn.execute('SELECT * FROM users').fetchall()
+    nodes = conn.execute('SELECT * FROM storage_nodes').fetchall()
 
-    if file is None:
-        conn.close()
-        flash('File not found or you are not the owner.')
-        return redirect(url_for('dashboard'))
+    total_files = conn.execute('SELECT COUNT(*) as c FROM files WHERE is_trashed = 0').fetchone()['c']
+    total_users = conn.execute('SELECT COUNT(*) as c FROM users').fetchone()['c']
+    total_storage_used = conn.execute(
+        'SELECT SUM(filesize) as total FROM files WHERE is_trashed = 0'
+    ).fetchone()['total'] or 0
 
-    target_user = conn.execute(
-        'SELECT * FROM users WHERE username = ?', (target_username,)
-    ).fetchone()
+    node_stats = []
+    for node in nodes:
+        used_mb = get_folder_size_mb(node['node_path'])
+        node_stats.append({
+            'id': node['id'],
+            'name': node['node_name'],
+            'path': node['node_path'],
+            'capacity_mb': node['capacity_mb'],
+            'used_mb': round(used_mb, 2),
+            'free_mb': round(node['capacity_mb'] - used_mb, 2),
+            'is_active': node['is_active'],
+            'is_user_node': node['is_user_node']
+        })
 
-    if target_user is None:
-        conn.close()
-        flash('User not found.')
-        return redirect(url_for('dashboard'))
-
-    if target_user['id'] == session['user_id']:
-        conn.close()
-        flash('You cannot share a file with yourself.')
-        return redirect(url_for('dashboard'))
-
-    existing = conn.execute(
-        'SELECT * FROM shares WHERE file_id = ? AND shared_with_id = ?',
-        (file_id, target_user['id'])
-    ).fetchone()
-
-    if existing:
-        conn.execute(
-            'UPDATE shares SET permission = ? WHERE id = ?',
-            (permission, existing['id'])
-        )
-    else:
-        conn.execute(
-            'INSERT INTO shares (file_id, owner_id, shared_with_id, permission) VALUES (?, ?, ?, ?)',
-            (file_id, session['user_id'], target_user['id'], permission)
-        )
-
-    conn.commit()
     conn.close()
-    flash(f'File shared with {target_username}.')
-    return redirect(url_for('dashboard'))
 
-@app.route('/shared_with_me')
-@login_required
-def shared_with_me():
+    return render_template(
+        'admin.html',
+        users=users,
+        node_stats=node_stats,
+        total_files=total_files,
+        total_users=total_users,
+        total_storage_used=round(total_storage_used / (1024 * 1024), 2)
+    )
+
+
+@app.route('/admin/toggle_node/<int:node_id>', methods=['POST'])
+@admin_required
+def toggle_node(node_id):
     conn = get_db_connection()
-    shared_files = conn.execute(
-        '''SELECT files.*, shares.permission, users.username as owner_name
-           FROM shares
-           JOIN files ON shares.file_id = files.id
-           JOIN users ON shares.owner_id = users.id
-           WHERE shares.shared_with_id = ? AND files.is_trashed = 0''',
-        (session['user_id'],)
-    ).fetchall()
+    node = conn.execute('SELECT * FROM storage_nodes WHERE id = ?', (node_id,)).fetchone()
+    if node:
+        new_status = 0 if node['is_active'] else 1
+        conn.execute('UPDATE storage_nodes SET is_active = ? WHERE id = ?', (new_status, node_id))
+        conn.commit()
     conn.close()
-    return render_template('shared_with_me.html', shared_files=shared_files)
+    return redirect(url_for('admin_dashboard'))
 
 
 if __name__ == '__main__':

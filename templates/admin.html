@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+<head><title>Admin Dashboard - ShareSpace</title></head>
+<body>
+    <h2>Admin Dashboard</h2>
+    <a href="{{ url_for('dashboard') }}">Back to My Dashboard</a>
+
+    <hr>
+    <h3>System Overview</h3>
+    <p>Total Users: {{ total_users }}</p>
+    <p>Total Files: {{ total_files }}</p>
+    <p>Total Storage Used: {{ total_storage_used }} MB</p>
+
+    <hr>
+    <h3>Storage Nodes</h3>
+    <table border="1" cellpadding="6">
+        <tr>
+            <th>Name</th>
+            <th>Type</th>
+            <th>Path</th>
+            <th>Capacity (MB)</th>
+            <th>Used (MB)</th>
+            <th>Free (MB)</th>
+            <th>Status</th>
+            <th>Action</th>
+        </tr>
+        {% for node in node_stats %}
+        <tr>
+            <td>{{ node.name }}</td>
+            <td>{{ 'User-Owned' if node.is_user_node else 'System' }}</td>
+            <td>{{ node.path }}</td>
+            <td>{{ node.capacity_mb }}</td>
+            <td>{{ node.used_mb }}</td>
+            <td>{{ node.free_mb }}</td>
+            <td>{{ 'Active' if node.is_active else 'Inactive' }}</td>
+            <td>
+                <form method="POST" action="{{ url_for('toggle_node', node_id=node.id) }}">
+                    <button type="submit">{{ 'Deactivate' if node.is_active else 'Activate' }}</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+    </table>
+
+    <hr>
+    <h3>Users</h3>
+    <table border="1" cellpadding="6">
+        <tr>
+            <th>Username</th>
+            <th>Email</th>
+            <th>Role</th>
+            <th>Joined</th>
+        </tr>
+        {% for user in users %}
+        <tr>
+            <td>{{ user['username'] }}</td>
+            <td>{{ user['email'] }}</td>
+            <td>{{ user['role'] }}</td>
+            <td>{{ user['created_at'] }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+</body>
+</html>

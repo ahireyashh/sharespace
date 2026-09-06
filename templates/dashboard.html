@@ -4,6 +4,9 @@
 <body>
     <h2>Welcome, {{ username }}!</h2>
     <a href="{{ url_for('logout') }}">Logout</a>
+    {% if role == 'admin' %}
+        | <a href="{{ url_for('admin_dashboard') }}">Admin Panel</a>
+    {% endif %}
 
     <hr>
     <h3>Create Folder</h3>
@@ -28,30 +31,32 @@
     </ul>
 
     <h3>Your Files</h3>
-<ul>
-    {% for file in files %}
-        <li>
-            {{ file['filename'] }} ({{ file['filesize'] }} bytes) — stored on {{ file['node_name'] }}
-            — <a href="{{ url_for('download_file', file_id=file['id']) }}">Download</a>
-<form method="POST" action="{{ url_for('delete_file', file_id=file['id']) }}" style="display:inline">
-    <button type="submit">Delete</button>
-</form>
-            <form method="POST" action="{{ url_for('share_file') }}" style="display:inline">
-                <input type="hidden" name="file_id" value="{{ file['id'] }}">
-                <input type="text" name="username" placeholder="Share with username" required>
-                <select name="permission">
-                    <option value="view">View only</option>
-                    <option value="download">Can download</option>
-                </select>
-                <button type="submit">Share</button>
-            </form>
-        </li>
-    {% endfor %}
-</ul>
+    <ul>
+        {% for file in files %}
+            <li>
+                {{ file['filename'] }} ({{ file['filesize'] }} bytes) — stored on {{ file['node_name'] }}
+                — <a href="{{ url_for('download_file', file_id=file['id']) }}">Download</a>
 
-<hr>
-<a href="{{ url_for('shared_with_me') }}">View Files Shared With Me</a>
-<a href="{{ url_for('trash') }}">View Trash</a>
+                <form method="POST" action="{{ url_for('delete_file', file_id=file['id']) }}" style="display:inline">
+                    <button type="submit">Delete</button>
+                </form>
+
+                <form method="POST" action="{{ url_for('share_file') }}" style="display:inline">
+                    <input type="hidden" name="file_id" value="{{ file['id'] }}">
+                    <input type="text" name="username" placeholder="Share with username" required>
+                    <select name="permission">
+                        <option value="view">View only</option>
+                        <option value="download">Can download</option>
+                    </select>
+                    <button type="submit">Share</button>
+                </form>
+            </li>
+        {% endfor %}
+    </ul>
+
+    <hr>
+    <a href="{{ url_for('shared_with_me') }}">View Files Shared With Me</a>
+    | <a href="{{ url_for('trash') }}">View Trash</a>
 
 </body>
 </html>
