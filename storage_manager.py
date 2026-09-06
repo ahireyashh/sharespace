@@ -1,7 +1,9 @@
 import os
 from database import get_db_connection
 
+
 def get_folder_size_mb(path):
+    """Calculate total size (in MB) of all files inside a node's folder."""
     total = 0
     for dirpath, dirnames, filenames in os.walk(path):
         for f in filenames:
@@ -10,7 +12,9 @@ def get_folder_size_mb(path):
                 total += os.path.getsize(fp)
     return total / (1024 * 1024)
 
+
 def select_best_node():
+    """Pick the active storage node with the most free space."""
     conn = get_db_connection()
     nodes = conn.execute(
         'SELECT * FROM storage_nodes WHERE is_active = 1'

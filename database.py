@@ -2,27 +2,16 @@ import sqlite3
 
 DB_NAME = "sharespace.db"
 
+
 def get_db_connection():
     conn = sqlite3.connect(DB_NAME)
     conn.row_factory = sqlite3.Row
     return conn
 
+
 def init_db():
     conn = get_db_connection()
-    conn.execute('''
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE NOT NULL,
-            email TEXT UNIQUE NOT NULL,
-            password TEXT NOT NULL,
-            role TEXT DEFAULT 'user',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-    conn.commit()
-    conn.close()
-def init_db():
-    conn = get_db_connection()
+
     conn.execute('''
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -59,6 +48,7 @@ def init_db():
             FOREIGN KEY (owner_user_id) REFERENCES users (id)
         )
     ''')
+
     conn.execute('''
         CREATE TABLE IF NOT EXISTS files (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -76,12 +66,13 @@ def init_db():
             FOREIGN KEY (node_id) REFERENCES storage_nodes (id)
         )
     ''')
-    
 
     conn.commit()
     conn.close()
 
+
 def seed_nodes():
+    """Insert default storage nodes if none exist yet."""
     conn = get_db_connection()
     existing = conn.execute('SELECT COUNT(*) as c FROM storage_nodes').fetchone()['c']
     if existing == 0:

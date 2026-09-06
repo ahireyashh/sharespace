@@ -1,19 +1,26 @@
-from flask import Flask, render_template, request, redirect, url_for, session, flash
-from werkzeug.security import generate_password_hash, check_password_hash
-from database import get_db_connection, init_db
-from storage_manager import select_best_node
-from database import get_db_connection, init_db, seed_nodes
 import os
 import hashlib
+import sqlite3
 import uuid
-from flask import send_from_directory
+from functools import wraps
+
+from flask import (
+    Flask, render_template, request, redirect,
+    url_for, session, flash, send_from_directory
+)
+from werkzeug.security import generate_password_hash, check_password_hash
+
+from database import get_db_connection, init_db, seed_nodes
+from storage_manager import select_best_node
 
 app = Flask(__name__)
 app.secret_key = 'change-this-to-something-random-later'
 
 init_db()
 seed_nodes()
-from functools import wraps
+
+
+# ---------- Helpers ----------
 
 def login_required(f):
     @wraps(f)
@@ -23,9 +30,13 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated
 
+
+# ---------- Public routes ----------
+
 @app.route('/')
 def home():
     return render_template('index.html')
+
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
@@ -42,15 +53,16 @@ def register():
                 (username, email, hashed_password)
             )
             conn.commit()
-            conn.close()
             flash('Registration successful! Please login.')
             return redirect(url_for('login'))
-        except conn.IntegrityError:
-            conn.close()
+        except sqlite3.IntegrityError:
             flash('Username or email already exists.')
             return redirect(url_for('register'))
+        finally:
+            conn.close()
 
     return render_template('register.html')
+
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -75,6 +87,15 @@ def login():
 
     return render_template('login.html')
 
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('home'))
+
+
+# ---------- Authenticated routes ----------
+
 @app.route('/dashboard')
 @login_required
 def dashboard():
@@ -90,11 +111,12 @@ def dashboard():
         (session['user_id'],)
     ).fetchall()
     conn.close()
-    return render_template('dashboard.html', username=session['username'], files=files, folders=folders)
-@app.route('/logout')
-def logout():
-    session.clear()
-    return redirect(url_for('home'))
+    return render_template(
+        'dashboard.html',
+        username=session['username'],
+        files=files,
+        folders=folders
+    )
 
 
 @app.route('/create_folder', methods=['POST'])
@@ -112,18 +134,15 @@ def create_folder():
     conn.close()
     return redirect(url_for('dashboard'))
 
+
 @app.route('/upload', methods=['POST'])
 @login_required
 def upload_file():
-    if 'file' not in request.files:
+    if 'file' not in request.files or request.files['file'].filename == '':
         flash('No file selected.')
         return redirect(url_for('dashboard'))
 
     file = request.files['file']
-    if file.filename == '':
-        flash('No file selected.')
-        return redirect(url_for('dashboard'))
-
     folder_id = request.form.get('folder_id') or None
 
     node = select_best_node()
@@ -138,7 +157,8 @@ def upload_file():
     file.save(filepath)
 
     filesize = os.path.getsize(filepath)
-    filehash = hashlib.sha256(open(filepath, 'rb').read()).hexdigest()
+    with open(filepath, 'rb') as f:
+        filehash = hashlib.sha256(f.read()).hexdigest()
 
     conn = get_db_connection()
     conn.execute(
@@ -151,10 +171,6 @@ def upload_file():
 
     flash(f'File uploaded successfully to {node["node_name"]}.')
     return redirect(url_for('dashboard'))
-
-UPLOAD_FOLDER = 'storage'
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-
 
 
 @app.route('/download/<int:file_id>')
@@ -182,6 +198,7 @@ def download_file(file_id):
         as_attachment=True,
         download_name=file['filename']
     )
-    
+
+
 if __name__ == '__main__':
     app.run(debug=True)
