@@ -211,6 +211,93 @@ def download_file(file_id):
         as_attachment=True,
         download_name=file['filename']
     )
+
+@app.route('/delete/<int:file_id>', methods=['POST'])
+@login_required
+def delete_file(file_id):
+    conn = get_db_connection()
+    file = conn.execute(
+        'SELECT * FROM files WHERE id = ? AND owner_id = ?',
+        (file_id, session['user_id'])
+    ).fetchone()
+
+    if file is None:
+        conn.close()
+        flash('File not found or you are not the owner.')
+        return redirect(url_for('dashboard'))
+
+    conn.execute('UPDATE files SET is_trashed = 1 WHERE id = ?', (file_id,))
+    conn.commit()
+    conn.close()
+    flash('File moved to trash.')
+    return redirect(url_for('dashboard'))
+
+
+@app.route('/trash')
+@login_required
+def trash():
+    conn = get_db_connection()
+    trashed_files = conn.execute(
+        '''SELECT files.*, storage_nodes.node_name FROM files
+           LEFT JOIN storage_nodes ON files.node_id = storage_nodes.id
+           WHERE files.owner_id = ? AND files.is_trashed = 1''',
+        (session['user_id'],)
+    ).fetchall()
+    conn.close()
+    return render_template('trash.html', trashed_files=trashed_files)
+
+
+@app.route('/restore/<int:file_id>', methods=['POST'])
+@login_required
+def restore_file(file_id):
+    conn = get_db_connection()
+    file = conn.execute(
+        'SELECT * FROM files WHERE id = ? AND owner_id = ?',
+        (file_id, session['user_id'])
+    ).fetchone()
+
+    if file is None:
+        conn.close()
+        flash('File not found or you are not the owner.')
+        return redirect(url_for('trash'))
+
+    conn.execute('UPDATE files SET is_trashed = 0 WHERE id = ?', (file_id,))
+    conn.commit()
+    conn.close()
+    flash('File restored.')
+    return redirect(url_for('trash'))
+
+
+@app.route('/delete_permanent/<int:file_id>', methods=['POST'])
+@login_required
+def delete_permanent(file_id):
+    conn = get_db_connection()
+    file = conn.execute(
+        'SELECT * FROM files WHERE id = ? AND owner_id = ? AND is_trashed = 1',
+        (file_id, session['user_id'])
+    ).fetchone()
+
+    if file is None:
+        conn.close()
+        flash('File not found, not trashed, or you are not the owner.')
+        return redirect(url_for('trash'))
+
+    node = conn.execute(
+        'SELECT * FROM storage_nodes WHERE id = ?', (file['node_id'],)
+    ).fetchone()
+
+    filepath = os.path.join(node['node_path'], file['stored_name'])
+    if os.path.exists(filepath):
+        os.remove(filepath)
+
+    conn.execute('DELETE FROM shares WHERE file_id = ?', (file_id,))
+    conn.execute('DELETE FROM files WHERE id = ?', (file_id,))
+    conn.commit()
+    conn.close()
+    flash('File permanently deleted.')
+    return redirect(url_for('trash'))
+
+
 @app.route('/share', methods=['POST'])
 @login_required
 def share_file():

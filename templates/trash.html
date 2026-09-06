@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html>
+<head><title>Trash - ShareSpace</title></head>
+<body>
+    <h2>Trash</h2>
+    <a href="{{ url_for('dashboard') }}">Back to Dashboard</a>
+    <ul>
+        {% for file in trashed_files %}
+            <li>
+                {{ file['filename'] }} ({{ file['filesize'] }} bytes) — was on {{ file['node_name'] }}
+
+                <form method="POST" action="{{ url_for('restore_file', file_id=file['id']) }}" style="display:inline">
+                    <button type="submit">Restore</button>
+                </form>
+
+                <form method="POST" action="{{ url_for('delete_permanent', file_id=file['id']) }}" style="display:inline"
+                      onsubmit="return confirm('Permanently delete this file? This cannot be undone.');">
+                    <button type="submit">Delete Forever</button>
+                </form>
+            </li>
+        {% endfor %}
+    </ul>
+</body>
+</html>

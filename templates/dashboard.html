@@ -33,7 +33,9 @@
         <li>
             {{ file['filename'] }} ({{ file['filesize'] }} bytes) — stored on {{ file['node_name'] }}
             — <a href="{{ url_for('download_file', file_id=file['id']) }}">Download</a>
-
+<form method="POST" action="{{ url_for('delete_file', file_id=file['id']) }}" style="display:inline">
+    <button type="submit">Delete</button>
+</form>
             <form method="POST" action="{{ url_for('share_file') }}" style="display:inline">
                 <input type="hidden" name="file_id" value="{{ file['id'] }}">
                 <input type="text" name="username" placeholder="Share with username" required>
@@ -49,5 +51,7 @@
 
 <hr>
 <a href="{{ url_for('shared_with_me') }}">View Files Shared With Me</a>
+<a href="{{ url_for('trash') }}">View Trash</a>
+
 </body>
 </html>
