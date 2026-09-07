@@ -9,12 +9,14 @@ from flask import (
     url_for, session, flash, send_from_directory
 )
 from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.utils import secure_filename
 
 from database import get_db_connection, init_db, seed_nodes
 from storage_manager import select_best_node, get_folder_size_mb
 
 app = Flask(__name__)
 app.secret_key = 'change-this-to-something-random-later'
+app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50 MB upload limit
 
 init_db()
 seed_nodes()
@@ -41,6 +43,12 @@ def admin_required(f):
             return redirect(url_for('dashboard'))
         return f(*args, **kwargs)
     return decorated
+
+
+@app.errorhandler(413)
+def file_too_large(e):
+    flash('File too large. Max size is 50MB.')
+    return redirect(url_for('dashboard'))
 
 
 # ---------- Public routes ----------
@@ -158,12 +166,16 @@ def upload_file():
     file = request.files['file']
     folder_id = request.form.get('folder_id') or None
 
+    original_name = secure_filename(file.filename)
+    if original_name == '':
+        flash('Invalid filename.')
+        return redirect(url_for('dashboard'))
+
     node = select_best_node()
     if node is None:
         flash('No storage node available.')
         return redirect(url_for('dashboard'))
 
-    original_name = file.filename
     unique_name = f"{uuid.uuid4().hex}_{original_name}"
     filepath = os.path.join(node['node_path'], unique_name)
 
